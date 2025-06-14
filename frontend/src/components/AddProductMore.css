@@ -1,0 +1,30 @@
+.tools-container {
+  margin-top: 100px;
+}
+
+.form-container {
+  margin-top: 60px;
+  display: flex;
+  padding: 0 50px;
+  justify-content: center;
+}
+
+.form-box {
+  border: 1px solid #E5E7EB;
+  border-radius: 12px;
+  background-color: white;
+  padding: 180px 100px;
+  text-align: center;
+}
+
+.success-message {
+  color: #D1D5DB;
+}
+
+.add-more-button {
+  background-color: #3B82F6;
+  border-radius: 16px;
+  padding: 4px 16px;
+  color: white;
+  text-decoration: none;
+}
