@@ -1,10 +1,12 @@
 import express from "express";
 import addproductRoutes from './routes/addproduct.routes.js';
 import mongoose from "mongoose";
+import cors from 'cors';
 
 const app = express();
 
 app.use(express.json());
+app.use(cors());
 
 const PORT = 9874;
 

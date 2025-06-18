@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { IoMdArrowRoundBack, IoIosCheckmarkCircle, IoIosArrowBack, IoIosArrowForward, IoMdBarcode, IoIosRadioButtonOff, IoIosClose } from "react-icons/io";
 import { MdImageSearch } from "react-icons/md";
 import { BsStars } from "react-icons/bs";
@@ -7,7 +7,50 @@ import { BsStars } from "react-icons/bs";
 import './AddProduct.css';
 
 function AddProduct() {
+
+const [formData, setFormData] = useState({
+    itemType: 'goods',
+    productName: '',
+    sku: '',
+    barcode: '',
+    category: '',
+    subCategory: '',
+    brand: '',
+    productType: 'simple',
+    supplier: '',
+    supplierSKU: '',
+    warehouse: '',
+    advance: {
+      leadTime: '',
+      reorderLevel: '',
+      initialStock: '',
+      track: 'serialno',
+      status: { returnable: false }
+    },
+    pricing: {
+      purchasePrice: '',
+      sellingPrice: '',
+      wholesalePrice: '',
+      quantity: '',
+      unit: '',
+      discountPrice: '',
+      discountPeriod: { from: '', to: '' },
+      taxRate: '',
+      hsnSac: '',
+      gstRate: ''
+    },
+    description: {
+      text: '',
+      seoTitle: '',
+      seoDescription: '',
+      keywords: []
+    },
+    variants: {}
+  });
+
   const [currentStep, setCurrentStep] = useState(1);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
 
   // Toggle for Advance section
   const [isToggled, setIsToggled] = useState(false);
@@ -34,31 +77,83 @@ function AddProduct() {
     "Flavour",
     "Gender",
   ], []);
+  
   const [variantToggles, setVariantToggles] = useState(
-    variantButtons.reduce((acc, button) => ({ ...acc, [button]: false }), {})
+    Object.fromEntries(variantButtons.map(button => [button, false]))
   );
 
-  // Set Color as active by default
-  useEffect(() => {
-    if (currentStep === 4) {
-      setVariantToggles(
-        variantButtons.reduce(
-          (acc, button) => ({ ...acc, [button]: button === "Color" }),
-          {}
-        )
-      );
+  // API calls
+  const fetchInitialData = useCallback(async () => {
+    try {
+      setLoading(true);
+      const response = await fetch('/api/product/initial-data', {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const data = await response.json();
+
+      // Update formData with fetched categories, suppliers, etc.
+      setFormData(prev => ({
+        ...prev,
+        category: data.categories?.[0] || '',
+        subCategory: data.subCategories?.[0] || '',
+        brand: data.brands?.[0] || '',
+        supplier: data.suppliers?.[0] || '',
+        warehouse: data.warehouses?.[0] || ''
+      }));
+    } catch (err) {
+      setError('Failed to fetch initial data', err);
+    } finally {
+      setLoading(false);
     }
-  }, [currentStep, variantButtons]);
+  }, []);
+
+  const saveProduct = useCallback(async (isDraft = false) => {
+    try {
+      setLoading(true);
+      const response = await fetch('/api/product', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...formData, isDraft })
+      });
+      if (!response.ok) throw new Error('Failed to save product');
+      return await response.json();
+    } catch (err) {
+      setError('Failed to save product');
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, [formData]);
+
+  // Initialize variant toggles and fetch initial data
+  useEffect(() => {
+    fetchInitialData();
+    if (currentStep === 4) {
+      setVariantToggles(prev => ({
+        ...Object.fromEntries(variantButtons.map(button => [button, false])),
+        Color: true
+      }));
+    }
+  }, [currentStep, variantButtons, fetchInitialData]);
+
+  // Handle form input changes
+  const handleInputChange = useCallback((section, field, value) => {
+    setFormData(prev => ({
+      ...prev,
+      [section]: section 
+        ? { ...prev[section], [field]: value }
+        : { ...prev, [field]: value }
+    }));
+  }, []);
 
   // Toggle handler for variant buttons
-  const toggleVariantContent = (button) => {
-    setVariantToggles(
-      variantButtons.reduce(
-        (acc, btn) => ({ ...acc, [btn]: btn === button ? !variantToggles[button] : false }),
-        {}
-      )
-    );
-  };
+  
+  const toggleVariantContent = useCallback((button) => {
+    setVariantToggles(prev => ({
+      ...Object.fromEntries(variantButtons.map(btn => [btn, btn === button ? !prev[button] : false]))
+    }));
+  }, [variantButtons]);
 
   // Navigation handlers - next
   const handleNext = () => {
@@ -132,12 +227,18 @@ function AddProduct() {
 
                     {/* items button */}
                     <div className="radio-group">
-                      <div>
-                        <input type="radio" id="goods" name="goods" value="goods" /> Goods
-                      </div>
-                      <div>
-                        <input type="radio" id="services" name="goods" value="services" /> Services
-                      </div>
+                      {['Goods', 'Services'].map(type => (
+                        <div key={type}>
+                          <input
+                            type="radio"
+                            id={type.toLowerCase()}
+                            name="itemType"
+                            value={type.toLowerCase()}
+                            checked={formData.itemType === type.toLowerCase()}
+                            onChange={(e) => handleInputChange(null, 'itemType', e.target.value)}
+                          /> {type}
+                        </div>
+                      ))}
                     </div>
 
                     {/* Product Name and SKU */}
@@ -148,6 +249,8 @@ function AddProduct() {
                           type="text"
                           placeholder="Enter New Product name"
                           className="input-field"
+                          value={formData.productName}
+                          onChange={(e) => handleInputChange(null, 'productName', e.target.value)}
                         />
                       </div>
                       <div>
@@ -156,6 +259,8 @@ function AddProduct() {
                           type="text"
                           placeholder="Enter SKU"
                           className="input-field"
+                          value={formData.sku}
+                          onChange={(e) => handleInputChange(null, 'sku', e.target.value)}
                         />
                       </div>
                     </div>
@@ -169,6 +274,8 @@ function AddProduct() {
                             type="text"
                             placeholder="Enter 12 Digit Code"
                             className="input-field barcode"
+                            value={formData.barcode}
+                            onChange={(e) => handleInputChange(null, 'barcode', e.target.value)}
                           />
                           <IoMdBarcode className="icon" />
                         </div>
@@ -193,22 +300,24 @@ function AddProduct() {
                       <div>
                         <p><b>Category</b></p>
                         <select
-                          name="category"
-                          id="category"
-                          className="select-field"
-                        >
-                          <option value="">Select Category</option>
-                        </select>
+                        value={formData.category}
+                        onChange={(e) => handleInputChange(null, 'category', e.target.value)}
+                        className="select-field"
+                      >
+                        <option value="">Select Category</option>
+                        {/* Populate from API */}
+                      </select>
                       </div>
                       <div>
                         <p><b>Sub Category</b></p>
-                        <select
-                          name="category"
-                          id="category"
-                          className="select-field"
-                        >
-                          <option value="">Select Category</option>
-                        </select>
+                      <select
+                        value={formData.subCategory}
+                        onChange={(e) => handleInputChange(null, 'subCategory', e.target.value)}
+                        className="select-field"
+                      >
+                        <option value="">Select Category</option>
+                        {/* Populate from API */}
+                      </select>
                       </div>
                     </div>
 
@@ -220,8 +329,10 @@ function AddProduct() {
                           name="category"
                           id="category"
                           className="select-field"
+                          value={formData.brand}
+                          onChange={(e) => handleInputChange(null, 'brand', e.target.value)}
                         >
-                          <option value="">Select Category</option>
+                        <option value="">Select Category</option>
                         </select>
                       </div>
                     </div>
@@ -233,16 +344,19 @@ function AddProduct() {
                     </div>
 
                     {/* product button */}
-                    <div className="radio-group">
-                      <div>
-                        <input type="radio" id="simple" name="type" value="simple" /> Simple
+                  <div className="radio-group">
+                    {['Simple', 'Variant', 'Bundle'].map(type => (
+                      <div key={type}>
+                        <input
+                          type="radio"
+                          id={type.toLowerCase()}
+                          name="productType"
+                          value={type.toLowerCase()}
+                          checked={formData.productType === type.toLowerCase()}
+                          onChange={(e) => handleInputChange(null, 'productType', e.target.value)}
+                        /> {type}
                       </div>
-                      <div>
-                        <input type="radio" id="variant" name="type" value="variant" /> Variant
-                      </div>
-                      <div>
-                        <input type="radio" id="bundle" name="type" value="bundle" /> Bundle
-                      </div>
+                    ))}
                     </div>
 
                     {/* Select Supplier */}
@@ -253,6 +367,8 @@ function AddProduct() {
                           name="category"
                           id="category"
                           className="select-field"
+                          value={formData.supplier}
+                          onChange={(e) => handleInputChange(null, 'supplier', e.target.value)}
                         >
                           <option value="">Select Category</option>
                         </select>
@@ -263,6 +379,8 @@ function AddProduct() {
                           name="category"
                           id="category"
                           className="select-field"
+                          value={formData.supplierSKU}
+                          onChange={(e) => handleInputChange(null, 'supplierSKU', e.target.value)}
                         >
                           <option value="">Select Category</option>
                         </select>
@@ -277,6 +395,8 @@ function AddProduct() {
                           name="category"
                           id="category"
                           className="select-field"
+                          value={formData.warehouse}
+                          onChange={(e) => handleInputChange(null, 'warehouse', e.target.value)}
                         >
                           <option value="">Select Category</option>
                         </select>
@@ -289,19 +409,17 @@ function AddProduct() {
                       {/* advance toggling */}
                       <div className="toggle-group">
                         <p><b>Advance</b></p>
-                        <label className="toggle-label">
-                          <input
-                            type="checkbox"
-                            className="toggle-input"
-                            checked={isToggled}
-                            onChange={handleToggle}
-                          />
-                          <div className="toggle-switch">
-                            <div
-                              className={`toggle-knob ${isToggled ? "toggled" : ""}`}
-                            ></div>
-                          </div>
-                        </label>
+                      <label className="toggle-label">
+                        <input
+                          type="checkbox"
+                          checked={isToggled}
+                          onChange={handleToggle}
+                          className="toggle-input"
+                        />
+                        <div className="toggle-switch">
+                          <div className={`toggle-knob ${isToggled ? "toggled" : ""}`}></div>
+                        </div>
+                      </label>
                       </div>
 
                       {isToggled && (
@@ -317,6 +435,8 @@ function AddProduct() {
                                 name="category"
                                 id="category"
                                 className="select-field"
+                                value={formData.advance.leadTime}
+                                onChange={(e) => handleInputChange('advance', 'leadTime', e.target.value)}
                               >
                                 <option value="">Select Category</option>
                               </select>
@@ -330,6 +450,8 @@ function AddProduct() {
                                 name="category"
                                 id="category"
                                 className="select-field"
+                                value={formData.advance.reorderLevel}
+                                onChange={(e) => handleInputChange('advance', 'reorderLevel', e.target.value)}
                               >
                                 <option value="">Select Category</option>
                               </select>
@@ -345,6 +467,8 @@ function AddProduct() {
                                 name="category"
                                 id="category"
                                 className="select-field"
+                                value={formData.advance.initialStock}
+                                onChange={(e) => handleInputChange('advance', 'initialStock', e.target.value)}
                               >
                                 <option value="">Select Category</option>
                               </select>
@@ -356,14 +480,20 @@ function AddProduct() {
                                 <p><b>Track</b></p>
                                 <p className="info-icon">?</p>
                               </div>
-                              <div className="radio-group track">
-                                <div>
-                                  <input type="radio" id="serialno" name="track" value="serialno"/> Serial No.
+                            <div className="radio-group track">
+                              {['Serial No.', 'Batch No.'].map(track => (
+                                <div key={track}>
+                                  <input
+                                    type="radio"
+                                    id={track.toLowerCase().replace(' ', '')}
+                                    name="track"
+                                    value={track.toLowerCase().replace(' ', '')}
+                                    checked={formData.advance.track === track.toLowerCase().replace(' ', '')}
+                                    onChange={(e) => handleInputChange('advance', 'track', e.target.value)}
+                                  /> {track}
                                 </div>
-                                <div>
-                                  <input type="radio" id="batchno" name="track" value="batchno"/> Batch No.
-                                </div>
-                              </div>
+                              ))}
+                            </div>
                             </div>
 
                             {/* Status */}
@@ -374,7 +504,12 @@ function AddProduct() {
                               </div>
                               <div className="radio-group status">
                                 <div>
-                                  <input type="checkbox" id="returnable" name="status" value="returnable"/> Returnable
+                                  <input type="checkbox" id="returnable" name="status" value="returnable"
+                                  checked={formData.advance.status.returnable}
+                                  onChange={(e) => handleInputChange('advance', 'status', {
+                                    ...formData.advance.status,
+                                    returnable: e.target.checked
+                                  })}/> Returnable
                                 </div>
                               </div>
                             </div>
@@ -443,6 +578,8 @@ function AddProduct() {
                           type="text"
                           placeholder="Enter New Product name"
                           className="input-field"
+                          value={formData.pricing.purchasePrice}
+                          onChange={(e) => handleInputChange('pricing', 'purchasePrice', e.target.value)}
                         />
                       </div>
                       <div>
@@ -451,6 +588,8 @@ function AddProduct() {
                           type="text"
                           placeholder="Enter SKU"
                           className="input-field"
+                          value={formData.pricing.sellingPrice}
+                          onChange={(e) => handleInputChange('pricing', 'sellingPrice', e.target.value)}
                         />
                       </div>
                     </div>
@@ -463,6 +602,8 @@ function AddProduct() {
                           name="category"
                           id="category"
                           className="select-field"
+                          value={formData.pricing.wholesalePrice}
+                          onChange={(e) => handleInputChange('pricing', 'wholesalePrice', e.target.value)}
                         >
                           <option value="">Select Category</option>
                         </select>
@@ -477,6 +618,8 @@ function AddProduct() {
                           type="text"
                           placeholder="In no."
                           className="input-field"
+                          value={formData.pricing.quantity}
+                          onChange={(e) => handleInputChange('pricing', 'quantity', e.target.value)}
                         />
                       </div>
                       <div>
@@ -485,8 +628,10 @@ function AddProduct() {
                           name="category"
                           id="category"
                           className="select-field"
+                          value={formData.pricing.unit}
+                          onChange={(e) => handleInputChange('pricing', 'unit', e.target.value)}
                         >
-                          <option value="">Select Category</option>
+                          <option value="">Select unit</option>
                         </select>
                       </div>
                     </div>
@@ -502,6 +647,8 @@ function AddProduct() {
                           type="text"
                           placeholder="Enter New Product name"
                           className="input-field"
+                          value={formData.pricing.discountPrice}
+                          onChange={(e) => handleInputChange('pricing', 'discountPrice', e.target.value)}
                         />
                       </div>
                       <div>
@@ -514,11 +661,21 @@ function AddProduct() {
                             type="date"
                             placeholder="From"
                             className="input-field date-from"
+                            value={formData.pricing.discountPeriod.from}
+                            onChange={(e) => handleInputChange('pricing', 'discountPeriod', {
+                            ...formData.pricing.discountPeriod,
+                            from: e.target.value
+                          })}
                           />
                           <input
                             type="date"
                             placeholder="To"
                             className="input-field date-to"
+                            value={formData.pricing.discountPeriod.to}
+                            onChange={(e) => handleInputChange('pricing', 'discountPeriod', {
+                            ...formData.pricing.discountPeriod,
+                            to: e.target.value
+                          })}
                           />
                         </div>
                       </div>
@@ -535,6 +692,8 @@ function AddProduct() {
                           name="category"
                           id="category"
                           className="select-field"
+                          value={formData.pricing.taxRate}
+                          onChange={(e) => handleInputChange('pricing', 'taxRate', e.target.value)}
                         >
                           <option value="">Select Category</option>
                         </select>
@@ -552,6 +711,8 @@ function AddProduct() {
                           name="category"
                           id="category"
                           className="select-field hsn-sac"
+                          value={formData.pricing.hsnSac}
+                          onChange={(e) => handleInputChange('pricing', 'hsnSac', e.target.value)}
                         >
                           <option value="" className="placeholder-option">
                             HSN Code
@@ -571,10 +732,8 @@ function AddProduct() {
                             checked={isToggled2}
                             onChange={handleToggle2}
                           />
-                          <div className="toggle-switch">
-                            <div
-                              className={`toggle-knob ${isToggled2 ? "toggled" : ""}`}
-                            ></div>
+                        <div className="toggle-switch">
+                          <div className={`toggle-knob ${isToggled2 ? "toggled" : ""}`}></div>
                           </div>
                         </label>
                       </div>
@@ -590,6 +749,8 @@ function AddProduct() {
                               name="category"
                               id="category"
                               className="select-field hsn-sac"
+                              value={formData.pricing.gstRate}
+                              onChange={(e) => handleInputChange('pricing', 'gstRate', e.target.value)}
                             >
                               <option value="" className="placeholder-option">
                                 0%
@@ -662,6 +823,8 @@ function AddProduct() {
                       <textarea
                         placeholder="Write description about products..."
                         className="textarea-field"
+                        value={formData.description.text}
+                        onChange={(e) => handleInputChange('description', 'text', e.target.value)}
                       />
                     </div>
 
@@ -672,7 +835,9 @@ function AddProduct() {
                       </div>
                       <div className="image-upload-input">
                         <label>Drag your image here, or </label>
-                        <input type="file" placeholder="browse" className="file-input" />
+                        <input type="file" placeholder="browse" className="file-input" 
+                        onChange={(e) => handleInputChange('description', 'image', e.target.files[0])}
+                        />
                       </div>
                       <div className="image-upload-support">
                         <label className="support-text">Support JPEG, PNG, JPG</label>
@@ -699,6 +864,8 @@ function AddProduct() {
                           type="text"
                           placeholder="Add Title"
                           className="input-field seo-title"
+                          value={formData.description.seoTitle}
+                          onChange={(e) => handleInputChange('description', 'seoTitle', e.target.value)}
                         />
                       </div>
                       <div>
@@ -710,6 +877,8 @@ function AddProduct() {
                           type="text"
                           placeholder="Write description"
                           className="input-field seo-description"
+                          value={formData.description.seoDescription}
+                          onChange={(e) => handleInputChange('description', 'seoDescription', e.target.value)}
                         />
                       </div>
                     </div>
@@ -728,47 +897,35 @@ function AddProduct() {
                         <br></br><br></br>
                       </div>
 
-                      <div className="keywords-list">
-                        <div>
-                          <div className="keyword-item">
-                            <IoIosCheckmarkCircle /> Fittings <IoIosClose />
-                          </div>
+                    <div className="keywords-list">
+                      {formData.description.keywords.map((keyword, index) => (
+                        <div key={index} className="keyword-item">
+                          <IoIosCheckmarkCircle />
+                          {keyword}
+                          <IoIosClose
+                            onClick={() => handleInputChange('description', 'keywords', 
+                              formData.description.keywords.filter((_, i) => i !== index)
+                            )}
+                          />
                         </div>
-                        <div>
-                          <div className="keyword-item active">
-                            <IoIosCheckmarkCircle className="keyword-icon" /> Hinges
-                            <IoIosClose className="keyword-icon" />
-                          </div>
-                        </div>
-                        <div>
-                          <div className="keyword-item construction">
-                            <IoIosCheckmarkCircle /> Construction hardware <IoIosClose />
-                          </div>
-                        </div>
-                        <div>
-                          <div className="keyword-item door-windows">
-                            <IoIosCheckmarkCircle /> Door and Windows <IoIosClose />
-                          </div>
-                        </div>
-                        <div>
-                          <div className="keyword-item">
-                            <IoIosCheckmarkCircle /> Buildings <IoIosClose />
-                          </div>
-                        </div>
-                        <div>
-                          <div className="keyword-item">
-                            <IoIosCheckmarkCircle /> Blocks <IoIosClose />
-                          </div>
-                        </div>
-                      </div>
+                      ))}
+                    </div>
                       
-                      <div className="keywords-input">
-                        <input
-                          type="text"
-                          placeholder="Type Keywords"
-                          className="input-field keywords"
-                        />
-                      </div>
+                    <div className="keywords-input">
+                      <input
+                        type="text"
+                        onKeyPress={(e) => {
+                          if (e.key === 'Enter' && e.target.value) {
+                            handleInputChange('description', 'keywords', 
+                              [...formData.description.keywords, e.target.value]
+                            );
+                            e.target.value = '';
+                          }
+                        }}
+                        placeholder="Type Keywords"
+                        className="input-field keywords"
+                      />
+                    </div>
                     </div>
 
                     <br></br>
@@ -850,6 +1007,8 @@ function AddProduct() {
                               name={`variant-${button.toLowerCase()}`}
                               id={`variant-${button.toLowerCase()}`}
                               className="select-field full-width"
+                              value={formData.variants[button.toLowerCase()] || ''}
+                              onChange={(e) => handleInputChange('variants', button.toLowerCase(), e.target.value)}
                             >
                               <option value="">Select {button}</option>
                             </select>
@@ -871,6 +1030,9 @@ function AddProduct() {
 
   return (
     <>
+      {loading && <div>Loading...</div>}
+      {error && <div className="error">{error}</div>}
+
       {/* rendering steps */}
       {renderStep()}
 
@@ -892,10 +1054,10 @@ function AddProduct() {
           </button>
         )}
 
-        <button className="nav-button draft">
+        <button className="nav-button draft" onClick={() => saveProduct(true)}>
           Save as draft
         </button>
-        <button className="nav-button save">
+        <button className="nav-button save" onClick={() => saveProduct(false)}>
           Save
         </button>
 
