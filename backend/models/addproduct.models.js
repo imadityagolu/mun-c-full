@@ -94,11 +94,11 @@ const addProductSchema = mongoose.Schema({
     seometadesc: {
         type: String,
     },
-    alkeywords: {
+    keywords: {
         type: [String],
     },
-    color: {
-        type: String,
+    variants: {
+        type: {String},
     }
 });
 
